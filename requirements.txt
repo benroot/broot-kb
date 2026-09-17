@@ -1,0 +1,4 @@
+Flask==3.0.3
+mistune==3.0.2
+PyYAML==6.0.3
+python-dotenv==1.0.1

@@ -1,0 +1,139 @@
+:root {
+  color-scheme: light dark;
+  --fg: #1a1a1a;
+  --bg: #fdfdfd;
+  --muted: #666;
+  --border: #ddd;
+  --accent: #2b5fd9;
+  --broken: #b02a2a;
+  --callout-bg: #eef2ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e6e6e6;
+    --bg: #1a1a1a;
+    --muted: #999;
+    --border: #333;
+    --accent: #7aa2f7;
+    --broken: #e06c6c;
+    --callout-bg: #22283a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  margin: 0;
+  line-height: 1.55;
+}
+
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+
+.site-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.site-title {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--fg);
+}
+
+.logout-form button, .search-form button, .login-box button {
+  cursor: pointer;
+}
+
+.search-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.search-form input[type="search"] {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.recent-list, .results-list {
+  list-style: none;
+  padding: 0;
+}
+
+.recent-list li, .results-list li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.results-list .snippet {
+  color: var(--muted);
+  margin: 0.25rem 0 0;
+}
+
+.results-list mark {
+  background: var(--callout-bg);
+  color: inherit;
+}
+
+a { color: var(--accent); }
+
+.wikilink-broken, .embed-broken {
+  color: var(--broken);
+  border-bottom: 1px dashed var(--broken);
+}
+
+.callout {
+  border-left: 3px solid var(--accent);
+  background: var(--callout-bg);
+  padding: 0.5rem 1rem;
+  margin: 1rem 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.callout-title {
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.embed-image {
+  max-width: 100%;
+}
+
+.login-box {
+  max-width: 320px;
+  margin: 4rem auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.login-box form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.login-box input {
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.error {
+  color: var(--broken);
+}

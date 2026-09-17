@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}broot-kb{% endblock %}
+{% block content %}
+  <form class="search-form" action="{{ url_for('routes.search') }}" method="get">
+    <input type="search" name="q" value="{{ query or '' }}" placeholder="Search notes…" autofocus>
+    <button type="submit">Search</button>
+  </form>
+
+  {% if results is not none %}
+    <h2>Results for "{{ query }}"</h2>
+    {% if results %}
+      <ul class="results-list">
+        {% for row in results %}
+          <li>
+            <a href="{{ url_for('routes.note', filepath=row['path']) }}">{{ row['title'] }}</a>
+            <p class="snippet">{{ row['snippet'] | safe }}</p>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No matches.</p>
+    {% endif %}
+  {% else %}
+    <h2>Recently edited</h2>
+    {% if recent_files %}
+      <ul class="recent-list">
+        {% for row in recent_files %}
+          <li><a href="{{ url_for('routes.note', filepath=row['path']) }}">{{ row['title'] }}</a></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No notes indexed yet. Run <code>reindex.py</code> after syncing the vault.</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}
