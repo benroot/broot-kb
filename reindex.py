@@ -9,9 +9,18 @@ Two-phase, per CLAUDE.md's "no cross-file rendering dependency" design:
            filename lookup table is complete before anything renders.
   Phase B: render only the notes that are new or whose mtime advanced,
            resolving wikilinks/embeds against the now-complete lookup.
+
+Use --limit N to try this against a real vault before trusting it on the
+whole thing: Phase A still scans everything (so the lookup table - and
+therefore link resolution - is complete and correct), but Phase B only
+renders a random sample of N notes, so you get a fast, representative
+preview without waiting for or committing a full run. Point DATABASE_PATH
+at a scratch file while doing this so it doesn't touch your real db.
 """
+import argparse
 import json
 import os
+import random
 
 import config
 from wsgi_app import db, links, render
@@ -121,17 +130,35 @@ def render_changed(conn, changed_note_paths):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Reindex the vault into the SQLite db.")
+    parser.add_argument(
+        "--limit", type=int, default=None, metavar="N",
+        help="Render at most N changed/new notes, chosen at random, instead of all "
+             "of them. Phase A still scans the whole vault so links resolve "
+             "correctly - only Phase B's rendering is capped. Useful for a quick, "
+             "representative preview against a real vault (point DATABASE_PATH at "
+             "a scratch file first).",
+    )
+    args = parser.parse_args()
+
     db.init_db()
     conn = db.get_connection()
     try:
         changed, seen_notes, seen_media = scan_vault(conn)
         deleted_notes, deleted_media = sweep_deleted(conn, seen_notes, seen_media)
+
+        skipped = 0
+        if args.limit is not None and len(changed) > args.limit:
+            skipped = len(changed) - args.limit
+            changed = random.sample(changed, args.limit)
+
         rendered = render_changed(conn, changed)
     finally:
         conn.close()
 
     print(f"Scanned vault: {len(seen_notes)} note(s), {len(seen_media)} media file(s)")
-    print(f"Rendered {rendered} new/changed note(s)")
+    limit_note = f" ({skipped} more skipped by --limit)" if skipped else ""
+    print(f"Rendered {rendered} new/changed note(s){limit_note}")
     print(f"Removed {deleted_notes} deleted note row(s), {deleted_media} deleted media row(s)")
 
 
