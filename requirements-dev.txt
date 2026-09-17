@@ -1,0 +1,7 @@
+# For the machine that hosts the Obsidian vault and runs reindex.py/sync.py
+# (and for running the Flask dev server locally). The deployed server only
+# needs requirements.txt - it never renders markdown, only serves rows
+# reindex.py already rendered (see CLAUDE.md: File Sync & Reindexing).
+-r requirements.txt
+mistune==3.0.2
+PyYAML==6.0.3

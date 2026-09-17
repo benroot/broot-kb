@@ -1,6 +1,8 @@
-"""Standalone reindex script - run after each rsync push, over SSH, not as
-an HTTP route (see CLAUDE.md: Passenger/WSGI request timeouts and CloudLinux
-LVE limits make an in-request reindex unsafe at vault scale).
+"""Reindex script - run locally against the real vault, before any sync to
+the server (see sync.py, and CLAUDE.md's File Sync & Reindexing section).
+Never runs on the server itself: this keeps parsing/rendering off the
+shared-hosting box entirely, sidestepping Passenger/WSGI request timeouts and
+CloudLinux LVE CPU/memory limits rather than working around them.
 
 Two-phase, per CLAUDE.md's "no cross-file rendering dependency" design:
   Phase A: walk the vault, sync path/mtime for every note & media file so the

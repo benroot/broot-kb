@@ -8,7 +8,7 @@ Reference: `SAMPLE_CLAUDE.MD` in this same repo is the system-reference file fro
 ---
 
 ## Status
-Design phase, in progress. Core stack, hosting model, sync mechanism, and auth approach agreed. Rendering/search implementation details and exact rsync invocation still to be finalized. Not yet scaffolded. Intended to eventually be handed to Claude Code for implementation, not built in-chat.
+Scaffolded and functional: Flask app, SQLite+FTS5 schema, auth (login/CSRF/lockout), mistune-based renderer (wikilinks/embeds/callouts), homepage/search/note routes, and reindex/sync scripts all exist and have been exercised end-to-end against a test vault. Exact rsync flags/path quoting for the real vault and real remote host are still to be verified (see Open Questions). Being implemented directly with Claude Code, not just designed in-chat.
 
 ---
 
@@ -16,14 +16,16 @@ Design phase, in progress. Core stack, hosting model, sync mechanism, and auth a
 
 **Vault source of truth**: the Obsidian vault stays local and authoritative on the user's machine. Content reaches the server via a one-way rsync push — no live sync, no bidirectional editing on the server.
 
+**Rendering happens locally, never on the server.** Markdown → HTML conversion (and the whole reindex pass) runs on the machine that hosts the Obsidian vault, via `reindex.py`, orchestrated by `sync.py` (see File Sync & Reindexing). The server only ever serves rows that were already rendered elsewhere — it never parses markdown, so it doesn't need `mistune`/`PyYAML` at all. This fully sidesteps the CloudLinux LVE CPU/memory-limit risk a server-side reindex would carry, rather than just mitigating it.
+
 **Backend**: Python, Flask — chosen for consistency with the prior project and because it's a known-working fit for this host's Passenger/WSGI model.
 
-**Markdown parsing**: pure-Python only. `obsidian-export` (the Rust CLI originally considered) is assumed **not usable**, since shared cPanel hosting typically does not allow running arbitrary compiled binaries. Likely candidates: `markdown-it-py` or `mistune`, extended with custom rules for:
+**Markdown parsing**: pure-Python only, using **mistune 3.x** (chosen over `markdown-it-py` — lighter footprint, and Obsidian callouts are blockquote-based so custom rules are needed with either engine). `obsidian-export` (the Rust CLI originally considered) is assumed **not usable on the server**, since shared cPanel hosting typically does not allow running arbitrary compiled binaries — moot now anyway since rendering doesn't happen there. Custom mistune rules handle:
 - Wikilinks: `[[note]]`, `[[note|display text]]`
 - Callouts: `> [!note]`, `> [!warning]`, etc.
 - Obsidian-style frontmatter (YAML)
 
-**Note-in-note transclusion is explicitly out of scope.** The user doesn't embed notes into other notes in practice — `![[...]]` in this vault only ever refers to **media** (images, PDFs), never another note's rendered content. This removes an entire category of complexity: no cross-file rendering dependency, no cache-invalidation cascade (A's cached HTML going stale because embedded note B changed), no "is this a note-embed or a media-embed" branching in the general case. `![[...]]` resolution is simply: recognize a media file extension, resolve the filename to a served URL via the same filename-lookup table used for wikilinks, and emit an `<img>` tag (images) or a link/embed (PDFs). Media files themselves stay as files on disk in the synced vault directory — only the filename→path mapping goes into SQLite; file bytes are never stored in the DB.
+**Note-in-note transclusion is explicitly out of scope.** The user doesn't embed notes into other notes in practice — `![[...]]` in this vault only ever refers to **media** (images, PDFs, docx, HEIC/HEIF photos), never another note's rendered content. This removes an entire category of complexity: no cross-file rendering dependency, no cache-invalidation cascade (A's cached HTML going stale because embedded note B changed), no "is this a note-embed or a media-embed" branching in the general case. `![[...]]` resolution is simply: recognize a media file extension, resolve the filename to a served URL via the same filename-lookup table used for wikilinks, and emit an `<img>` tag for browser-displayable image formats or a download link otherwise (PDF, docx, HEIC/HEIF — HEIC/HEIF is only natively displayable in an `<img>` by Safari, so it's linked rather than inlined everywhere). Media files themselves stay as files on disk in the synced vault directory — only the filename→path mapping goes into SQLite; file bytes are never stored in the DB (considered and rejected: SQLite's incremental-BLOB-read API needs Python 3.11+, unavailable on the server's 3.8.20 ceiling, so serving a large PDF from a BLOB would load the whole thing into memory per request under CloudLinux's memory limits; BLOBs also don't reclaim disk space on delete/replace without a `VACUUM`, unlike plain files). Since rendering happens locally now (see above), the server's copy of the vault directory only needs media files — `.md` files themselves are never synced to the server at all.
 
 **Serving media**: needs its own authenticated route rather than Flask's default `/static` (which isn't behind the login check) — e.g. `/vault-assets/<path:filepath>` with `send_from_directory`, guarded by the same `@login_required` as everything else.
 
@@ -42,15 +44,21 @@ Design phase, in progress. Core stack, hosting model, sync mechanism, and auth a
 
 ## File Sync & Reindexing
 
-- **Mechanism**: rsync over SSH (confirmed available on this cPanel account), pushed from the user's Windows machine (via the free cwRsync client, run without admin rights) to a data directory on the server — kept separate from the app's own git repo so content syncs don't collide with code deploys.
-- **No live file-watching**: the host can't run a persistent process to watch for changes, so this is a push-then-reindex model, not real-time.
-- **Archive mode (`-a`) required**: preserves the *source* file's modification time on the destination. This matters specifically because "most recently edited" on the homepage is meant to reflect actual Obsidian edit time — without `-a`/`-t`, every file would get "now" as its mtime on every sync, breaking that feature.
-- **Excludes**: `.obsidian/` config directory and any non-markdown clutter should be excluded from the sync.
-- **Reindex trigger: standalone script over SSH, not an HTTP route.** An `/admin/reindex` route was the original idea, but Passenger/WSGI requests typically have a timeout (often 30–60s), and cPanel shared hosting usually runs under CloudLinux LVE CPU/memory limits — a reindex could exceed either and die mid-run, leaving the DB inconsistent. Since SSH access is confirmed available, reindex instead runs as a plain script invoked directly, chained onto the rsync command itself (e.g. `rsync ... && ssh user@host 'cd ~/app && venv/bin/python reindex.py'`). This has no WSGI-imposed time limit, and keeps the web app itself purely read-only against whatever's currently in SQLite — reindexing never touches the request/response cycle.
-- **Incremental, not full, on routine syncs**: the reindex script compares each synced file's mtime against what's already stored in SQLite from the last run, and only re-parses/re-renders files that are new or changed. A full 10k-file reindex only happens once, on initial setup — routine reindexes (a normal day's worth of edits) touch only a handful of rows and should be fast (sub-second to a few seconds), since there's no cross-file rendering dependency to worry about now that note transclusion is out of scope (see Architecture).
-- **Deletion handling**: if `--delete` is used with rsync, the reindex step needs a mark-and-sweep pass — reconcile the full current file list against the DB and remove entries for files no longer present, to avoid stale search results and dead links.
-- **Separate from code deploys**: content sync (rsync + reindex) and app code deploy (git pull + Passenger restart) are two distinct actions and should not be conflated in tooling or documentation.
-- Exact rsync command/flags: **deliberately not finalized yet** — to be worked out later.
+**Reindexing happens locally, not on the server.** This was a pivot from the original design (which ran reindex.py over SSH on the server after each rsync push). Reasoning: SQLite's `rendered_html`/FTS5 persistence already means the server never needs to parse markdown to serve a page, so there was no real reason to make it do that parsing work at sync time either — better to keep the entire render pipeline on a machine with no CPU/memory quota. This also fully resolves what used to be an open risk (reindex timing never benchmarked against this host's actual LVE limits) rather than mitigating it.
+
+- **`sync.py`** (run on the machine hosting the Obsidian vault — never deployed to or run on the server) orchestrates the whole flow in one command:
+  1. Runs `reindex.py` locally against the real vault (`VAULT_DIR`/`DATABASE_PATH` env vars point at the real vault and a local db file, not `dev_vault/`) — all parsing/rendering happens here.
+  2. `rsync`s media files (everything except `.md` and `.obsidian/`) to the server, with `--delete` so removed media disappears there too.
+  3. `rsync`s the freshly-built sqlite db to the server **last**, so it's never live on the server while referencing media that hasn't arrived yet.
+- **Mechanism**: rsync over SSH (confirmed available on this cPanel account), via the free cwRsync client on the user's Windows machine, run without admin rights, to a data directory on the server kept separate from the app's own git repo (so content syncs don't collide with code deploys).
+- **No live file-watching**: the host can't run a persistent process to watch for changes, so this is a push-model, not real-time — the user runs `sync.py` when they want the server updated.
+- **The server's copy of the vault directory holds media only** — no `.md` files are ever synced there, since rendering already happened locally. `.obsidian/` and markdown files are excluded from the media rsync.
+- **`.md` mtimes only matter locally now**: "most recently edited" on the homepage is computed from mtimes read directly off the local vault's `.md` files during local reindexing — archive-mode/`-a` preservation of source mtimes matters for the *media* rsync (for correct HTTP caching headers on served assets), but is no longer load-bearing for the recently-edited feature the way it would be if the server were doing the mtime comparison.
+- **Database transfer must stay atomic on the server.** Since `reindex.py` closes its connection cleanly when done (no WAL, no lingering journal file at rest) and the app opens a short-lived `sqlite3` connection per request rather than holding one open per worker, a plain `rsync` (its default temp-file-then-rename behavior — never pass `--inplace` for the db) is safe: in-flight requests keep reading the old file, the very next request picks up the new one, no Passenger restart needed.
+- **Incremental, not full, on routine syncs**: `reindex.py` compares each vault file's mtime against what's already stored in SQLite from the last run, and only re-parses/re-renders files that are new or changed. A full 10k-file reindex only happens once, on initial setup — routine reindexes (a normal day's worth of edits) touch only a handful of rows, and now run on unconstrained local hardware regardless.
+- **Deletion handling**: `reindex.py` does a mark-and-sweep pass on every run — reconciles the full current vault listing against the DB and removes rows for files no longer present, to avoid stale search results and dead links.
+- **Separate from code deploys**: content sync (`sync.py`) and app code deploy (git pull + Passenger restart) are two distinct actions and should not be conflated in tooling or documentation.
+- Exact rsync flags/path quoting for the real vault and real remote paths (in particular, whether the cwRsync build in use needs Windows paths translated to `/cygdrive/...` form) are **not yet verified against the real setup** — `sync.py`'s rsync invocations are a working starting point, not finalized.
 
 ---
 
@@ -59,6 +67,7 @@ Design phase, in progress. Core stack, hosting model, sync mechanism, and auth a
 
 - **Hosting**: cPanel-based shared hosting, using cPanel's "Setup Python App" tool (Passenger integration). Apache owns the web ports; the app runs inside Apache's process model via Passenger, not as a standalone process on its own port.
 - **Python version**: 3.8.20, a hard ceiling set by the host. No 3.9+-only syntax (no `match`/`case`, no `X | Y` type unions).
+- **Server dependencies are minimal**: `requirements.txt` (Flask + python-dotenv only) is what the server installs. `mistune`/`PyYAML` live in `requirements-dev.txt` instead, since only `reindex.py`/`sync.py` (local-only) need them — the deployed app never imports the renderer.
 - **WSGI entry point**: `passenger_wsgi.py` in the project root, committed to git (no secrets in it).
 - **Secrets**: set via cPanel's "Setup Python App" environment-variable UI in production, not via `.env` (Passenger's `.env` auto-loading behavior isn't reliably consistent with local dev).
 - **Deploy process**: manual — SSH/cPanel Terminal → `git pull` → Restart via the Python App page. No CI/CD.
@@ -77,7 +86,7 @@ Design phase, in progress. Core stack, hosting model, sync mechanism, and auth a
 
 ## Challenges & Decisions — Rendering & Search
 
-- **Render-once, persist in DB**: markdown → HTML conversion happens at reindex time, not per-request — avoids re-parsing custom Obsidian syntax on every page view at 10k-file scale. See Architecture for the `rendered_html` column decision and why no caching package is used.
+- **Render-once, persist in DB**: markdown → HTML conversion happens at reindex time, not per-request — avoids re-parsing custom Obsidian syntax on every page view at 10k-file scale. See Architecture for the `rendered_html` column decision, why no caching package is used, and why reindexing (and therefore rendering) now happens locally rather than on the server.
 - **No cross-file rendering dependency**: with note-in-note transclusion out of scope, each file's rendered HTML depends only on that file's own content — reindexing one file never requires touching or invalidating any other file's cached HTML.
 - **Broken links**: wikilinks pointing to renamed/deleted/not-yet-synced notes must degrade gracefully (plain text or a distinguishable "broken link" style), not error the whole page. Same treatment applies to `![[...]]` media references pointing at missing files.
 - **Search previews**: FTS5's `snippet()`/`highlight()` functions generate matched-term preview snippets directly — no custom preview-generation logic needed.
@@ -87,11 +96,10 @@ Design phase, in progress. Core stack, hosting model, sync mechanism, and auth a
 ---
 
 ## Open Questions / Not Yet Decided
-- Exact rsync command and flags (deliberately deferred).
-- Whether the SSH-chained reindex call is run manually after each rsync push, or scripted into one combined command the user runs.
-- Whether "recently edited" on the homepage is a fixed count (e.g. last 20 files) or a date-window cutoff.
-- Whether search should match only file content, or also filenames/tags/frontmatter fields.
-- Specific brute-force lockout thresholds for the login route.
-- Real-world reindex timing hasn't been measured yet — the "sub-second to a few seconds for incremental" estimate is analytical, not benchmarked against this host's actual LVE CPU limits.
+- Exact rsync flags and path quoting against the real vault/remote host — in particular whether the cwRsync build in use needs Windows paths given in `/cygdrive/...` form. `sync.py` has a working starting point, not verified against the real setup yet.
+- Whether search should match only file content, or also filenames/tags/frontmatter fields (currently: title + body only).
+- Specific brute-force lockout thresholds for the login route (currently: 5 attempts / 15 minutes, a starting default — not validated against real usage).
 - Backlinks, tag browsing, graph view, dark mode — all explicitly out of scope for MVP, to be considered only after basic render/search/auth is working end-to-end.
 - Note-in-note transclusion is out of scope for now per current usage patterns — would need revisiting (and reintroduces the cache-invalidation-cascade problem) if that authoring habit ever changes.
+
+**Resolved**: markdown library (mistune 3.x); reindex trigger (`sync.py`, run locally, not SSH-chained on the server); "recently edited" is a fixed count of 20; reindex timing/LVE-limit risk (moot now — reindexing never runs on the server); media-bytes-in-DB was considered and rejected (see Architecture).
