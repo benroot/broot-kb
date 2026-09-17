@@ -121,7 +121,15 @@ def render_changed(conn, changed_note_paths):
             SET title = ?, rendered_html = ?, body = ?, frontmatter_json = ?, mtime = ?
             WHERE path = ?
             """,
-            (title, html, body, json.dumps(frontmatter), os.path.getmtime(full_path), rel_path),
+            (
+                title, html, body,
+                # default=str: YAML auto-parses unquoted dates/timestamps into
+                # datetime.date/datetime objects, which json.dumps can't
+                # serialize natively - str() gives a reasonable ISO-ish
+                # representation for storage purposes.
+                json.dumps(frontmatter, default=str),
+                os.path.getmtime(full_path), rel_path,
+            ),
         )
         rendered += 1
 
