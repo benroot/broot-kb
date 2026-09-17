@@ -114,6 +114,14 @@ a { color: var(--accent); }
   max-width: 100%;
 }
 
+.embed-file {
+  display: inline-block;
+}
+
+.embed-file::before {
+  content: "\1F4CE  ";
+}
+
 .login-box {
   max-width: 320px;
   margin: 4rem auto 0;

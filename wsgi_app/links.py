@@ -1,10 +1,7 @@
 import os
 from urllib.parse import quote
 
-MEDIA_EXTENSIONS = {
-    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp",
-    ".pdf",
-}
+import config
 
 
 def _stem(path):
@@ -35,7 +32,7 @@ def resolve(lookup, name):
     """
     ext = os.path.splitext(name)[1].lower()
 
-    if ext in MEDIA_EXTENSIONS:
+    if ext in config.MEDIA_EXTENSIONS:
         path = lookup["media"].get(_stem(name).lower() + ext) or lookup["media"].get(name.lower())
         if path:
             return {"kind": "media", "url": "/vault-assets/" + quote(path)}

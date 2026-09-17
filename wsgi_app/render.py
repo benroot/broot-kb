@@ -4,6 +4,8 @@ import re
 import mistune
 import yaml
 
+import config
+
 from . import links
 
 FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?\n)---\s*\n?", re.DOTALL)
@@ -52,11 +54,11 @@ def _render_wiki_embed(renderer, target):
     result = links.resolve(renderer.lookup, target)
     if result["kind"] == "media":
         ext = os.path.splitext(target)[1].lower()
-        if ext == ".pdf":
-            return '<a class="embed-pdf" href="{}">{}</a>'.format(
+        if ext in config.IMAGE_EXTENSIONS:
+            return '<img class="embed-image" src="{}" alt="{}">'.format(
                 result["url"], mistune.escape(target)
             )
-        return '<img class="embed-image" src="{}" alt="{}">'.format(
+        return '<a class="embed-file" href="{}">{}</a>'.format(
             result["url"], mistune.escape(target)
         )
     return '<span class="embed-broken" title="Missing media">{}</span>'.format(

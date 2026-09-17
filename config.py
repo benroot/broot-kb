@@ -23,7 +23,18 @@ LOGIN_LOCKOUT_WINDOW_SECONDS = 15 * 60
 
 RECENT_FILES_LIMIT = 20
 
-MEDIA_EXTENSIONS = {
-    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp",
-    ".pdf",
+# Extensions an <img> tag can display inline in a browser. HEIC/HEIF (the
+# default on iPhone) is deliberately excluded even though it's an image
+# format - only Safari renders it natively in <img>, so it's treated as a
+# download instead (see DOWNLOAD_EXTENSIONS).
+IMAGE_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".avif",
+    ".tif", ".tiff",
 }
+
+# Recognized but rendered as a link/download rather than inlined.
+DOWNLOAD_EXTENSIONS = {
+    ".pdf", ".docx", ".heic", ".heif",
+}
+
+MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | DOWNLOAD_EXTENSIONS
