@@ -32,6 +32,17 @@ else:
 VAULT_DIR = os.environ.get("VAULT_DIR", os.path.join(BASE_DIR, "dev_vault"))
 DATABASE_PATH = os.environ.get("DATABASE_PATH", os.path.join(BASE_DIR, "broot-kb.db"))
 
+# Only matters on the machine running reindex.py/sync.py, not the server.
+# links.py bakes wikilink/embed URLs directly into rendered_html at reindex
+# time, outside any Flask request - it has no SCRIPT_NAME/url_for to work
+# with, unlike server-rendered templates (homepage/search links, which pick
+# up the app's URL prefix for free via Passenger). If the app is deployed
+# under a subdirectory (e.g. https://example.com/broot-kb/), set this to
+# that path (e.g. "/broot-kb") on the reindexing machine and re-run
+# reindex.py/sync.py - otherwise in-note links/embeds resolve against the
+# domain root and 404.
+URL_PREFIX = os.environ.get("URL_PREFIX", "").rstrip("/")
+
 # Sync destination, used only by sync.py (run on the machine that hosts the
 # Obsidian vault, never on the server itself - see CLAUDE.md: File Sync &
 # Reindexing). Optional here since the deployed app itself never needs them.

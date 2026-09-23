@@ -35,10 +35,10 @@ def resolve(lookup, name):
     if ext in config.MEDIA_EXTENSIONS:
         path = lookup["media"].get(_stem(name).lower() + ext) or lookup["media"].get(name.lower())
         if path:
-            return {"kind": "media", "url": "/vault-assets/" + quote(path)}
+            return {"kind": "media", "url": config.URL_PREFIX + "/vault-assets/" + quote(path)}
         return {"kind": "broken", "url": None}
 
     path = lookup["notes"].get(name.lower()) or lookup["notes"].get(_stem(name).lower())
     if path:
-        return {"kind": "note", "url": "/note/" + quote(path)}
+        return {"kind": "note", "url": config.URL_PREFIX + "/note/" + quote(path)}
     return {"kind": "broken", "url": None}
