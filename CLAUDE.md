@@ -40,6 +40,8 @@ Scaffolded and functional: Flask app, SQLite+FTS5 schema, auth (login/CSRF/locko
 - Clicking a file: rendered HTML view of that note.
 - Typing a search query: fast full-text search against FTS5, with highlighted preview snippets.
 
+**Favicon / home-screen icon**: generated from a single source image (`high-res-icon.png`, kept at repo root as the master) into `wsgi_app/static/icons/` at the standard sizes (16/32/48 favicon, 180 apple-touch-icon, 192/512 Android/Chrome) — flattened onto solid white during resizing rather than kept transparent, since the source had a soft/feathered alpha edge that would otherwise render as an ugly fringe on iOS/some Android launchers (the source's own card background is white already, so this is visually seamless). `wsgi_app/static/manifest.json` and the `<link>`/`<meta>` tags in `base.html` wire these up for "Add to Home Screen" on both platforms. The manifest's `start_url`/`scope`/icon `src` are deliberately **relative** (`".."`, `"icons/..."`) rather than absolute — per the Web App Manifest spec these resolve against the manifest's own URL, not the page's, so they work correctly under `URL_PREFIX` subdirectory deployments without needing to know the prefix (unlike `links.py`, which has no such escape hatch since it bakes absolute URLs into `rendered_html` outside any request context).
+
 **Auth**: single-user login, session persists ~30 days, enforced over HTTPS. See Auth section below for detail — this is a firmer requirement here than in the prior project, since this app is intentionally internet-reachable rather than local/LAN-only.
 
 ---
