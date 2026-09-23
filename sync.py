@@ -10,15 +10,17 @@ vault - NEVER deployed to or run on the server itself.
     3. rsync the freshly-built sqlite db to the server, last, so it never
        ends up referencing media that hasn't arrived yet.
 
-Requires `rsync` on PATH (e.g. cwRsync on Windows, run without admin rights)
-and SSH key auth already set up to the server. Needs REMOTE_SSH_TARGET,
-REMOTE_VAULT_DIR, REMOTE_DATABASE_PATH set - see .env.example.
-
-The exact rsync flags/path quoting here are a starting point, not finalized -
-verify them against your actual cwRsync build and remote layout (see
-CLAUDE.md's Open Questions).
+Requires `rsync` on PATH (a Cygwin/MSYS-style build - MSYS2's `rsync`
+package, or cwRsync) and SSH key auth already set up to the server. Needs
+REMOTE_SSH_TARGET, REMOTE_VAULT_DIR, REMOTE_DATABASE_PATH set - see
+.env.example. VAULT_DIR/DATABASE_PATH stay in native Windows-path form in
+.env (what Python/config.py want); _to_rsync_local_path() converts them to
+the /c/... form rsync's own argument parser needs for a LOCAL path right
+before each rsync call, since a raw `C:\foo` is otherwise misread as a
+remote host spec (rsync uses `:` to mean host:path).
 """
 import argparse
+import os
 import shlex
 import subprocess
 import sys
@@ -34,6 +36,26 @@ def _require(name):
     return value
 
 
+def _to_rsync_local_path(path):
+    """Convert a Windows-style path (C:\\foo\\bar) to the /c/foo/bar form a
+    Cygwin/MSYS-style rsync binary (MSYS2's rsync, cwRsync - what's
+    realistically available on Windows) needs for a LOCAL path argument.
+    Not MSYS2-specific: rsync's own argument syntax uses `:` to mean "this is
+    a remote host spec" (host:path), so a raw `C:\\foo` is misread as
+    "connect to a host named C" rather than a local path, regardless of
+    which shell invokes this script. Idempotent - already-POSIX or relative
+    paths (no drive letter) pass through with just backslashes normalized.
+
+    Uses the MSYS2 mount convention (/c/...). A Cygwin-based client like
+    cwRsync instead expects /cygdrive/c/... - swap the prefix below if you
+    switch tooling.
+    """
+    drive, rest = os.path.splitdrive(path)
+    if not drive:
+        return path.replace("\\", "/")
+    return "/" + drive.rstrip(":").lower() + rest.replace("\\", "/")
+
+
 def _run(cmd):
     print("+", " ".join(shlex.quote(part) for part in cmd))
     subprocess.run(cmd, check=True)
@@ -42,7 +64,7 @@ def _run(cmd):
 def sync_media():
     remote_target = _require("REMOTE_SSH_TARGET")
     remote_vault_dir = _require("REMOTE_VAULT_DIR").rstrip("/")
-    local_vault_dir = config.VAULT_DIR.rstrip("/\\") + "/"
+    local_vault_dir = _to_rsync_local_path(config.VAULT_DIR).rstrip("/") + "/"
 
     _run([
         "rsync", "-av", "--delete",
@@ -59,7 +81,7 @@ def sync_database():
 
     _run([
         "rsync", "-av",
-        config.DATABASE_PATH,
+        _to_rsync_local_path(config.DATABASE_PATH),
         f"{remote_target}:{remote_database_path}",
     ])
 

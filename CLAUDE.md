@@ -52,7 +52,7 @@ Scaffolded and functional: Flask app, SQLite+FTS5 schema, auth (login/CSRF/locko
   1. Runs `reindex.py` locally against the real vault (`VAULT_DIR`/`DATABASE_PATH` env vars point at the real vault and a local db file, not `dev_vault/`) — all parsing/rendering happens here.
   2. `rsync`s media files (everything except `.md` and `.obsidian/`) to the server, with `--delete` so removed media disappears there too.
   3. `rsync`s the freshly-built sqlite db to the server **last**, so it's never live on the server while referencing media that hasn't arrived yet.
-- **Mechanism**: rsync over SSH (confirmed available on this cPanel account), via the free cwRsync client on the user's Windows machine, run without admin rights, to a data directory on the server kept separate from the app's own git repo (so content syncs don't collide with code deploys).
+- **Mechanism**: rsync over SSH (confirmed available on this cPanel account), via MSYS2's `rsync`/`openssh` packages on the user's Windows machine (run from an MSYS2 shell; `pacman -S rsync openssh`), to a data directory on the server kept separate from the app's own git repo (so content syncs don't collide with code deploys). cwRsync was the originally-considered client; MSYS2 is what's actually in use.
 - **No live file-watching**: the host can't run a persistent process to watch for changes, so this is a push-model, not real-time — the user runs `sync.py` when they want the server updated.
 - **The server's copy of the vault directory holds media only** — no `.md` files are ever synced there, since rendering already happened locally. `.obsidian/` and markdown files are excluded from the media rsync.
 - **`.md` mtimes only matter locally now**: "most recently edited" on the homepage is computed from mtimes read directly off the local vault's `.md` files during local reindexing — archive-mode/`-a` preservation of source mtimes matters for the *media* rsync (for correct HTTP caching headers on served assets), but is no longer load-bearing for the recently-edited feature the way it would be if the server were doing the mtime comparison.
@@ -61,7 +61,7 @@ Scaffolded and functional: Flask app, SQLite+FTS5 schema, auth (login/CSRF/locko
 - **Incremental, not full, on routine syncs**: `reindex.py` compares each vault file's mtime against what's already stored in SQLite from the last run, and only re-parses/re-renders files that are new or changed. A full 10k-file reindex only happens once, on initial setup — routine reindexes (a normal day's worth of edits) touch only a handful of rows, and now run on unconstrained local hardware regardless.
 - **Deletion handling**: `reindex.py` does a mark-and-sweep pass on every run — reconciles the full current vault listing against the DB and removes rows for files no longer present, to avoid stale search results and dead links.
 - **Separate from code deploys**: content sync (`sync.py`) and app code deploy (git pull + Passenger restart) are two distinct actions and should not be conflated in tooling or documentation.
-- Exact rsync flags/path quoting for the real vault and real remote paths (in particular, whether the cwRsync build in use needs Windows paths translated to `/cygdrive/...` form) are **not yet verified against the real setup** — `sync.py`'s rsync invocations are a working starting point, not finalized.
+- **Windows↔POSIX path translation**: `.env`'s `VAULT_DIR`/`DATABASE_PATH` stay in native Windows form (`C:\Users\...`) since that's what Python/`config.py` want, but rsync (any Cygwin/MSYS-style build - MSYS2's, or cwRsync) needs local paths in `/c/...` form: rsync's own argument syntax uses `:` to mean "remote host spec" (`host:path`), so a raw `C:\foo` gets misread as "connect to host `C`" rather than treated as a local path. `sync.py`'s `_to_rsync_local_path()` converts right before each rsync call, so this only needs to be right in one place. Uses the MSYS2 mount convention (`/c/...`); a Cygwin-based client like cwRsync instead expects `/cygdrive/c/...` — would need the prefix swapped if that tooling is used instead.
 
 ---
 
@@ -99,10 +99,12 @@ Scaffolded and functional: Flask app, SQLite+FTS5 schema, auth (login/CSRF/locko
 ---
 
 ## Open Questions / Not Yet Decided
-- Exact rsync flags and path quoting against the real vault/remote host — in particular whether the cwRsync build in use needs Windows paths given in `/cygdrive/...` form. `sync.py` has a working starting point, not verified against the real setup yet.
+- Whether to also sync `.md` source files to the server (currently excluded) purely as an off-site backup, since the server doesn't functionally need them — under consideration, not yet decided. If done, likely without `--delete` for the markdown portion specifically, so a bad local edit/deletion doesn't immediately propagate to the "backup" copy the way `--delete` mirrors media.
 - Whether search should match only file content, or also filenames/tags/frontmatter fields (currently: title + body only).
 - Specific brute-force lockout thresholds for the login route (currently: 5 attempts / 15 minutes, a starting default — not validated against real usage).
 - Backlinks, tag browsing, graph view, dark mode — all explicitly out of scope for MVP, to be considered only after basic render/search/auth is working end-to-end.
 - Note-in-note transclusion is out of scope for now per current usage patterns — would need revisiting (and reintroduces the cache-invalidation-cascade problem) if that authoring habit ever changes.
+
+**Resolved**: rsync client is MSYS2 (`pacman -S rsync openssh`), not cwRsync; Windows↔POSIX local-path conversion for rsync handled by `sync.py`'s `_to_rsync_local_path()` (see File Sync & Reindexing).
 
 **Resolved**: markdown library (mistune 3.x); reindex trigger (`sync.py`, run locally, not SSH-chained on the server); "recently edited" is a fixed count of 20; reindex timing/LVE-limit risk (moot now — reindexing never runs on the server); media-bytes-in-DB was considered and rejected (see Architecture).
