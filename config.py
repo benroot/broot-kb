@@ -1,3 +1,4 @@
+import base64
 import os
 
 from dotenv import load_dotenv
@@ -10,7 +11,23 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # which never touch auth - can run standalone without Flask secrets
 # configured. create_app() enforces these are actually set before serving.
 SECRET_KEY = os.environ.get("SECRET_KEY")
-PASSWORD_HASH = os.environ.get("PASSWORD_HASH")
+
+# PASSWORD_HASH is stored base64-encoded in the env var - werkzeug's raw
+# pbkdf2:sha256:...$salt$hash format contains `$`, which has previously not
+# round-tripped cleanly through this host's env-var storage (plausibly
+# shell variable expansion somewhere in how it gets sourced). Base64's
+# alphabet has no shell/URL-metacharacters, sidestepping that entirely.
+# Generate values with generate_password_hash.py, which encodes for you.
+_password_hash_b64 = os.environ.get("PASSWORD_HASH")
+if _password_hash_b64:
+    try:
+        PASSWORD_HASH = base64.urlsafe_b64decode(_password_hash_b64).decode("ascii")
+    except (ValueError, UnicodeDecodeError) as e:
+        raise RuntimeError(
+            "PASSWORD_HASH is not valid base64 - generate it with generate_password_hash.py"
+        ) from e
+else:
+    PASSWORD_HASH = None
 
 VAULT_DIR = os.environ.get("VAULT_DIR", os.path.join(BASE_DIR, "dev_vault"))
 DATABASE_PATH = os.environ.get("DATABASE_PATH", os.path.join(BASE_DIR, "broot-kb.db"))
