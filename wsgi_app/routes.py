@@ -25,10 +25,7 @@ def _path_variants(filepath):
 
 
 def _recent_files(conn):
-    return conn.execute(
-        "SELECT path, title, mtime FROM files ORDER BY mtime DESC LIMIT ?",
-        (config.RECENT_FILES_LIMIT,),
-    ).fetchall()
+    return conn.execute("SELECT path, title, mtime FROM files ORDER BY mtime DESC").fetchall()
 
 
 def _run_search(conn, query):

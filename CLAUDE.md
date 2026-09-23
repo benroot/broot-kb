@@ -36,7 +36,7 @@ Scaffolded and functional: Flask app, SQLite+FTS5 schema, auth (login/CSRF/locko
 **Rendered HTML persistence**: a `rendered_html` TEXT column on the same `files` table used for metadata/mtime tracking — populated at reindex time, read directly on every page view. This is treated as **persisted data, not a cache** (no TTL, no eviction — it's durable until the source file changes and reindex overwrites it). No caching package (`diskcache`, Flask-Caching, etc.) is used or needed: the persistence layer is the SQLite DB the project already depends on via the stdlib `sqlite3` module, consistent with the no-unnecessary-dependencies philosophy carried over from the prior project. Keeping rendered HTML in the same row as the file's own metadata (rather than a separate cache store or flat `.html` files on disk) means one write, one source of truth, and the existing mark-and-sweep deletion logic automatically cleans it up too.
 
 **Frontend**: minimal, server-rendered.
-- Homepage: search bar + list of most-recently-edited files below it.
+- Homepage: search bar + list of every file below it, sorted most-recently-edited first (no cap — see Challenges & Decisions, this is cheap even at the vault's full ~10k-file scale).
 - Clicking a file: rendered HTML view of that note.
 - Typing a search query: fast full-text search against FTS5, with highlighted preview snippets.
 
@@ -107,4 +107,4 @@ Scaffolded and functional: Flask app, SQLite+FTS5 schema, auth (login/CSRF/locko
 
 **Resolved**: rsync client is MSYS2 (`pacman -S rsync openssh`), not cwRsync; Windows↔POSIX local-path conversion for rsync handled by `sync.py`'s `_to_rsync_local_path()` (see File Sync & Reindexing).
 
-**Resolved**: markdown library (mistune 3.x); reindex trigger (`sync.py`, run locally, not SSH-chained on the server); "recently edited" is a fixed count of 20; reindex timing/LVE-limit risk (moot now — reindexing never runs on the server); media-bytes-in-DB was considered and rejected (see Architecture).
+**Resolved**: markdown library (mistune 3.x); reindex trigger (`sync.py`, run locally, not SSH-chained on the server); "recently edited" shows every file, uncapped, sorted by mtime — benchmarked at ~12ms for a full unindexed `ORDER BY mtime DESC` scan over 10k synthetic rows, negligible even at the vault's full target size; reindex timing/LVE-limit risk (moot now — reindexing never runs on the server); media-bytes-in-DB was considered and rejected (see Architecture).

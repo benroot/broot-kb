@@ -59,8 +59,6 @@ SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "1") == "1"
 LOGIN_LOCKOUT_MAX_ATTEMPTS = 5
 LOGIN_LOCKOUT_WINDOW_SECONDS = 15 * 60
 
-RECENT_FILES_LIMIT = 20
-
 # Extensions an <img> tag can display inline in a browser. HEIC/HEIF (the
 # default on iPhone) is deliberately excluded even though it's an image
 # format - only Safari renders it natively in <img>, so it's treated as a
