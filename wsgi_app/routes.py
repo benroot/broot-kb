@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from urllib.parse import unquote
 
 from flask import Blueprint, abort, render_template, request, send_from_directory
 
@@ -9,6 +10,18 @@ from .auth import login_required
 from .db import get_connection
 
 bp = Blueprint("routes", __name__)
+
+
+def _path_variants(filepath):
+    """`filepath` as received, plus a %-decoded fallback if it contains a
+    `%` - some Apache/Passenger proxy setups (seen on this host, mounting
+    the app under a URL subdirectory) don't decode %20 etc. before handing
+    the path to Flask, so a space-containing name arrives still literally
+    encoded and misses an exact match against the db/filesystem."""
+    variants = [filepath]
+    if "%" in filepath:
+        variants.append(unquote(filepath))
+    return variants
 
 
 def _recent_files(conn):
@@ -66,9 +79,13 @@ def search():
 def note(filepath):
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT title, rendered_html FROM files WHERE path = ?", (filepath,)
-        ).fetchone()
+        row = None
+        for candidate in _path_variants(filepath):
+            row = conn.execute(
+                "SELECT title, rendered_html FROM files WHERE path = ?", (candidate,)
+            ).fetchone()
+            if row is not None:
+                break
     finally:
         conn.close()
     if row is None:
@@ -80,8 +97,11 @@ def note(filepath):
 @login_required
 def vault_asset(filepath):
     vault_root = os.path.normpath(config.VAULT_DIR)
-    full_path = os.path.normpath(os.path.join(vault_root, filepath))
-    if os.path.commonpath([vault_root, full_path]) != vault_root:
-        abort(404)
-    directory, name = os.path.split(full_path)
-    return send_from_directory(directory, name)
+    for candidate in _path_variants(filepath):
+        full_path = os.path.normpath(os.path.join(vault_root, candidate))
+        if os.path.commonpath([vault_root, full_path]) != vault_root:
+            continue
+        if os.path.isfile(full_path):
+            directory, name = os.path.split(full_path)
+            return send_from_directory(directory, name)
+    abort(404)
