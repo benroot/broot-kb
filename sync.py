@@ -18,6 +18,7 @@ The exact rsync flags/path quoting here are a starting point, not finalized -
 verify them against your actual cwRsync build and remote layout (see
 CLAUDE.md's Open Questions).
 """
+import argparse
 import shlex
 import subprocess
 import sys
@@ -63,9 +64,18 @@ def sync_database():
     ])
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Reindex locally, then sync media + db to the server.")
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Delete the local db and fully rebuild before syncing - forwarded to "
+             "reindex.py --force. Use after a render.py/links.py change (e.g. "
+             "URL_PREFIX) that needs every note re-rendered.",
+    )
+    args = parser.parse_args(argv)
+
     print("Reindexing local vault...")
-    reindex.main()
+    reindex.main(["--force"] if args.force else [])
 
     print("\nSyncing media...")
     sync_media()

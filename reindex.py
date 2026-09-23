@@ -137,7 +137,7 @@ def render_changed(conn, changed_note_paths):
     return rendered
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Reindex the vault into the SQLite db.")
     parser.add_argument(
         "--limit", type=int, default=None, metavar="N",
@@ -147,7 +147,19 @@ def main():
              "representative preview against a real vault (point DATABASE_PATH at "
              "a scratch file first).",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Delete the existing db first and rebuild from scratch, so every note "
+             "gets re-rendered regardless of mtime. Needed after a code change to "
+             "render.py/links.py (e.g. URL_PREFIX) - incremental reindex only "
+             "re-renders notes whose file mtime advanced, so it won't otherwise "
+             "pick up a change that affects rendering but not the source files.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.force and os.path.exists(config.DATABASE_PATH):
+        print(f"--force: deleting existing db at {config.DATABASE_PATH}")
+        os.remove(config.DATABASE_PATH)
 
     db.init_db()
     conn = db.get_connection()
